@@ -303,29 +303,19 @@ def process_and_send(item, is_urgent):
     source_name, title, desc, link, image, video = item
 
     if is_urgent:
-        # عاجل عادي: بدون تلخيص، نص أصلي مرتب
-        # عاجل مهم: يلخّص عبر Gemini
+        # عاجل: العنوان فقط بدون تلخيص
         if is_important_breaking(title, desc):
             body = rewrite_news(title, desc, source_name)
-            print(f"  🔴⭐ عاجل مهم → تلخيص Gemini")
         else:
-            # تنظيف النص الأصلي وإرساله مباشر
-            body = desc[:600] if desc and desc != title else ""
+            body = None
+        caption = f"🔴 <b>{title}</b>"
+        if body:
+            caption += f"\n\n{body}"
+        caption += f"\n\n<i>{source_name}</i>"
     else:
-        # يومي: دائماً يلخّص عبر Gemini
+        # يومي: فقرة ملخّصة (بدون عنوان منفصل)
         body = rewrite_news(title, desc, source_name)
-
-    caption_lines = []
-    if is_urgent:
-        caption_lines.append("🔴 <b>عاجل</b>")
-        caption_lines.append("")
-    caption_lines.append(f"<b>{title}</b>")
-    if body:
-        caption_lines.append("")
-        caption_lines.append(body)
-    caption_lines.append("")
-    caption_lines.append(f"<i>{source_name}</i>")
-    caption = "\n".join(caption_lines)
+        caption = f"{body}\n\n<i>{source_name}</i>"
 
     sent = send_news(
         caption,

@@ -176,31 +176,12 @@ def is_duplicate_title(new_title, existing_titles):
             return True
     return False
 
-def fetch_og_image(url):
-    """جلب صورة og:image من صفحة المقال"""
-    if not url:
-        return None
-    try:
-        r = requests.get(url, timeout=8, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
-        })
-        if r.status_code == 200:
-            # og:image
-            m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', r.text)
-            if not m:
-                m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', r.text)
-            if m:
-                return m.group(1)
-    except:
-        pass
-    return None
-
 def extract_media(entry):
-    """استخراج صورة أو فيديو من الـ RSS entry"""
+    """استخراج صورة أو فيديو فقط إذا المصدر حطها بالـ RSS"""
     image = None
     video = None
 
-    # 1. media_content (أكثر المصادر تستخدمه)
+    # 1. media_content
     for m in entry.get("media_content", []) or []:
         url_m = m.get("url", "")
         mtype = (m.get("type") or "").lower()
@@ -224,18 +205,6 @@ def extract_media(entry):
             video = url_e
         elif "image" in etype and not image:
             image = url_e
-
-    # 4. استخراج من HTML داخل summary/content
-    if not image:
-        html = entry.get("summary", "") or entry.get("description", "")
-        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html)
-        if m:
-            image = m.group(1)
-
-    # 5. جلب og:image من صفحة المقال (آخر محاولة)
-    if not image:
-        link = entry.get("link", "")
-        image = fetch_og_image(link)
 
     return image, video
 
@@ -384,6 +353,18 @@ def main():
 
             seen.add(entry_id)
 
+            # Google News: استخراج اسم المصدر الحقيقي
+            if source_name == "Google News":
+                real_source = entry.get("source", {})
+                if hasattr(real_source, "get"):
+                    source_name_actual = real_source.get("title") or real_source.get("value") or source_name
+                elif hasattr(entry, "source") and hasattr(entry.source, "title"):
+                    source_name_actual = entry.source.title
+                else:
+                    source_name_actual = source_name
+            else:
+                source_name_actual = source_name
+
             kw = matches_keywords(f"{title} {desc}")
             if not kw:
                 continue
@@ -395,14 +376,14 @@ def main():
             sent_titles.append(title)
 
             # حد أقصى لكل مصدر (تنويع المصادر)
-            sc = source_count.get(source_name, 0)
+            sc = source_count.get(source_name_actual, 0)
             if sc >= MAX_PER_SOURCE:
-                print(f"  ⊘ تجاوز حد المصدر: [{source_name}] {title[:40]}")
+                print(f"  ⊘ تجاوز حد المصدر: [{source_name_actual}] {title[:40]}")
                 continue
-            source_count[source_name] = sc + 1
+            source_count[source_name_actual] = sc + 1
 
             image, video = extract_media(entry)
-            item = (source_name, title, desc, link, image, video)
+            item = (source_name_actual, title, desc, link, image, video)
 
             # تصنيف: عاجل أم يومي
             if is_breaking(title):

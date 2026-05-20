@@ -3,7 +3,7 @@
 بوت أخبار حية - يعمل على GitHub Actions كل 10 دقائق
 يتابع القنوات الإخبارية ويرسل ملخصات الأخبار العاجلة عبر Telegram
 """
-import feedparser, requests, json, os, re, time
+import feedparser, requests, json, os, re, time, sys
 from datetime import datetime
 from google import genai
 
@@ -388,4 +388,19 @@ def main():
     print(f"\n✅ عاجل: {sent_breaking} | يومي: {sent_regular} | المتابعة: {len(seen)}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # لا يفشل أبداً - GitHub Actions يوقف الـ cron لو فشل كثير
+        print(f"❌ خطأ عام: {e}")
+        # حاول إرسال تنبيه
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json={"chat_id": CHAT_ID, "text": f"⚠️ خطأ في البوت: {str(e)[:200]}"},
+                timeout=10,
+            )
+        except:
+            pass
+    # دائماً exit 0 حتى ما يتوقف الـ cron
+    sys.exit(0)

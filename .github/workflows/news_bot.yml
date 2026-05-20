@@ -3,6 +3,7 @@ name: News Bot
 on:
   workflow_dispatch:
   schedule:
+    # كل 5 دقائق - GitHub قد يتأخر لكن التكرار يضمن التغطية
     - cron: '*/5 * * * *'
 
 permissions:

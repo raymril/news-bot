@@ -1,0 +1,23 @@
+name: Keep Alive
+
+# GitHub يوقف cron للريبوهات الهادية بعد 60 يوم
+# هذا يرسل commit فارغ كل أسبوع يخلي الريبو نشط
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'  # كل اثنين الظهر
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep alive
+        run: |
+          git config user.name "keepalive-bot"
+          git config user.email "bot@noreply.local"
+          git commit --allow-empty -m "keepalive: prevent cron disable"
+          git push

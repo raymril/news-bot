@@ -339,6 +339,7 @@ def main():
             continue
 
         for entry in feed.entries:
+          try:
             entry_id = entry.get("id") or entry.get("link") or entry.get("title", "")
             if not entry_id or entry_id in seen:
                 continue
@@ -386,6 +387,9 @@ def main():
                 breaking_items.append(item)
             else:
                 regular_items.append(item)
+          except Exception as e:
+            print(f"  ⚠ خطأ بمعالجة خبر [{source_name}]: {str(e)[:60]}")
+            continue
 
     # ===== 1) إرسال الأخبار العاجلة فوراً (5 ثوانٍ بين كل خبر) =====
     sent_breaking = 0

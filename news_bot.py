@@ -79,9 +79,6 @@ CONFLICT_KEYWORDS = [
     "بوتين", "ترامب", "نتنياهو", "خامنئي", "حزب الله", "حماس",
 ]
 
-# فاصل زمني بين دفعات الأخبار اليومية (ساعتين = 7200 ثانية)
-REGULAR_INTERVAL = 7200
-
 # ===== Helpers =====
 def load_state():
     """تحميل الحالة: الأخبار المرئية + وقت آخر إرسال يومي"""
@@ -323,17 +320,6 @@ def process_and_send(item, is_urgent):
 
     return sent
 
-# ===== وقت الراحة (توقيت الرياض UTC+3) =====
-REST_START = 3   # 6 صباحاً الرياض = 3 UTC
-REST_END   = 6   # 9 صباحاً الرياض = 6 UTC
-
-def is_rest_time():
-    """هل الحين وقت الراحة (6-9 صباحاً الرياض)؟"""
-    from datetime import timezone, timedelta
-    riyadh = timezone(timedelta(hours=3))
-    hour = datetime.now(riyadh).hour
-    return 6 <= hour < 9
-
 # ===== المعالج الرئيسي =====
 def main():
     now = time.time()
@@ -342,14 +328,9 @@ def main():
     seen, last_regular = load_state()
     is_first_run = len(seen) == 0
 
-    # وقت الراحة: جمع الأخبار بدون إرسال
-    resting = is_rest_time()
-    if resting:
-        print("😴 وقت الراحة (6-9 صباحاً) - جمع بدون إرسال")
-
     # ===== جمع كل الأخبار الجديدة =====
     breaking_items = []   # أخبار عاجلة → فورية
-    regular_items = []    # أخبار يومية → كل ساعتين
+    regular_items = []    # أخبار يومية → كل تشغيلة
     sent_titles = []      # عناوين مُرسلة لكشف التكرار
 
     for source_name, url in FEEDS:
@@ -389,13 +370,6 @@ def main():
             else:
                 regular_items.append(item)
 
-    # ===== وقت الراحة: جمع بدون إرسال =====
-    if resting:
-        print(f"  جُمع: {len(breaking_items)} عاجل + {len(regular_items)} يومي (ينتظر 9 صباحاً)")
-        save_state(seen, last_regular)
-        print(f"\n✅ وقت راحة | المتابعة: {len(seen)}")
-        return
-
     # ===== 1) إرسال الأخبار العاجلة فوراً (5 ثوانٍ بين كل خبر) =====
     sent_breaking = 0
     MAX_BREAKING = 15
@@ -407,24 +381,19 @@ def main():
             if i < len(breaking_items[:MAX_BREAKING]) - 1:
                 time.sleep(5)
 
-    # ===== 2) إرسال الأخبار اليومية كل ساعتين (10 ثوانٍ بين كل خبر) =====
+    # ===== 2) إرسال الأخبار اليومية - كل تشغيلة أقصى 3 أخبار (10 ثوانٍ بين كل خبر) =====
     sent_regular = 0
-    MAX_REGULAR = 8
-    time_since_last = now - last_regular
-    regular_due = time_since_last >= REGULAR_INTERVAL or last_regular == 0
+    MAX_REGULAR_PER_RUN = 3
 
-    if regular_items and regular_due:
-        print(f"\n📰 أخبار يومية: {len(regular_items)}")
-        for item in regular_items[:MAX_REGULAR]:
+    if regular_items:
+        print(f"\n📰 أخبار يومية: {len(regular_items)} (يُرسل {min(len(regular_items), MAX_REGULAR_PER_RUN)})")
+        for i, item in enumerate(regular_items[:MAX_REGULAR_PER_RUN]):
             if process_and_send(item, is_urgent=False):
                 sent_regular += 1
+            if i < min(len(regular_items), MAX_REGULAR_PER_RUN) - 1:
                 time.sleep(10)
-        last_regular = now
-    elif regular_items:
-        remaining = max(0, REGULAR_INTERVAL - time_since_last)
-        print(f"\n📰 {len(regular_items)} يومي (بعد {remaining/60:.0f} دقيقة)")
 
-    save_state(seen, last_regular)
+    save_state(seen, now)
     print(f"\n✅ عاجل: {sent_breaking} | يومي: {sent_regular} | المتابعة: {len(seen)}")
 
 if __name__ == "__main__":

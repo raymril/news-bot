@@ -141,8 +141,18 @@ def clean_html(text):
     text = re.sub(r'<[^>]+>', '', text)
     text = html_mod.unescape(text)
     text = text.replace('\xa0', ' ')
-    text = re.sub(r'\s*[-–—|]\s*[A-Za-zÀ-ɏ\s]{3,30}$', '', text)
+    # إزالة اسم المصدر من النهاية (لاتيني أو عربي مع -)
+    text = re.sub(r'\s*[-–—|]\s*[A-Za-zÀ-ɏ\s\.]{2,40}$', '', text)
+    text = re.sub(r'\s*[-–—|]\s*[؀-ۿ\s\.]{2,30}$', '', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+def clean_breaking_title(title):
+    """تنظيف عنوان عاجل: إزالة كلمة عاجل المكررة والمصدر"""
+    # إزالة "عاجل" و"عاجل:" و"عاجل |" من بداية العنوان
+    t = re.sub(r'^[\s]*(?:عاجل\s*[:||\-–]\s*)+', '', title)
+    t = re.sub(r'^[\s]*(?:BREAKING\s*[:|]\s*)+', '', t, flags=re.IGNORECASE)
+    t = re.sub(r'^[\s]*(?:JUST IN\s*[:|]\s*)+', '', t, flags=re.IGNORECASE)
+    return t.strip()
 
 def normalize_title(title):
     """تطبيع العنوان لكشف التكرار"""
@@ -209,7 +219,10 @@ def extract_media(entry):
 
 def rewrite_news(title, description, source):
     """إعادة صياغة الخبر بأسلوب وكالات الأنباء"""
-    prompt = f"""صِغ هذا الخبر بفقرة واحدة (3-4 جمل) بالعربية الفصحى بأسلوب رويترز. محايد وجاد بدون إيموجي أو نقاط. ابدأ بأهم معلومة. لا تكرر العنوان. اكتب مباشرة.
+    prompt = f"""صِغ هذا الخبر بفقرة واحدة (3-4 جمل) بالعربية الفصحى بأسلوب رويترز.
+- محايد وجاد بدون إيموجي أو نقاط.
+- ابدأ بمصدر التصريح الرسمي (البيت الأبيض، الكرملين، وزارة الدفاع...) وليس اسم القناة.
+- لا تكرر العنوان حرفياً. اكتب مباشرة بدون مقدمة.
 
 {title}
 {description}"""
@@ -287,9 +300,9 @@ def process_and_send(item, is_urgent):
     source_name, title, desc, link, image, video = item
 
     if is_urgent:
-        # عاجل: سطر واحد نظيف
-        # عاجل | النص
-        caption = f"عاجل | {title}"
+        # عاجل: نظيف بدون تكرار "عاجل" وبدون اسم قناة
+        clean_title = clean_breaking_title(title)
+        caption = f"عاجل | {clean_title}"
     else:
         # يومي: ملخّص Gemini + مصدر
         body = rewrite_news(title, desc, source_name)

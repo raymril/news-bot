@@ -320,6 +320,17 @@ def process_and_send(item, is_urgent):
 
     return sent
 
+# ===== وقت الراحة (توقيت الرياض UTC+3) =====
+REST_START = 3   # 6 صباحاً الرياض = 3 UTC
+REST_END   = 6   # 9 صباحاً الرياض = 6 UTC
+
+def is_rest_time():
+    """هل الحين وقت الراحة (6-9 صباحاً الرياض)؟"""
+    from datetime import timezone, timedelta
+    riyadh = timezone(timedelta(hours=3))
+    hour = datetime.now(riyadh).hour
+    return 6 <= hour < 9
+
 # ===== المعالج الرئيسي =====
 def main():
     now = time.time()
@@ -327,6 +338,11 @@ def main():
 
     seen, last_regular = load_state()
     is_first_run = len(seen) == 0
+
+    # وقت الراحة: جمع الأخبار بدون إرسال
+    resting = is_rest_time()
+    if resting:
+        print("😴 وقت الراحة (6-9 صباحاً) - جمع بدون إرسال")
 
     # ===== جمع كل الأخبار الجديدة =====
     breaking_items = []   # أخبار عاجلة → فورية
@@ -370,9 +386,16 @@ def main():
             else:
                 regular_items.append(item)
 
+    # ===== وقت الراحة: جمع بدون إرسال =====
+    if resting:
+        print(f"  جُمع: {len(breaking_items)} عاجل + {len(regular_items)} يومي (ينتظر 9 صباحاً)")
+        save_state(seen, last_regular)
+        print(f"\n✅ وقت راحة | المتابعة: {len(seen)}")
+        return
+
     # ===== 1) إرسال الأخبار العاجلة فوراً (5 ثوانٍ بين كل خبر) =====
     sent_breaking = 0
-    MAX_BREAKING = 10
+    MAX_BREAKING = 15
     if breaking_items:
         print(f"\n🔴 أخبار عاجلة: {len(breaking_items)}")
         for i, item in enumerate(breaking_items[:MAX_BREAKING]):

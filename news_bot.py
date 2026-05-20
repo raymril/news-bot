@@ -218,6 +218,7 @@ def main():
     seen = load_seen()
     is_first_run = len(seen) == 0
     total_sent = 0
+    MAX_PER_RUN = 8  # سقف الأخبار لكل تشغيل لتجنب الإغراق
 
     if is_first_run:
         send_telegram(
@@ -245,7 +246,7 @@ def main():
 
             seen.add(entry_id)
 
-            if is_first_run:
+            if total_sent >= MAX_PER_RUN:
                 continue
 
             kw = matches_keywords(f"{title} {desc}")

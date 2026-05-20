@@ -1,7 +1,7 @@
 name: News Bot
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   schedule:
     - cron: '*/10 * * * *'
 
@@ -43,6 +43,7 @@ jobs:
         run: python news_bot.py
 
       - name: Commit seen state
+        if: always()
         run: |
           git config user.name "news-bot"
           git config user.email "bot@noreply.local"
@@ -51,29 +52,19 @@ jobs:
             git commit -m "update seen state"
             for i in 1 2 3; do
               if git push; then
-                echo "✅ Pushed successfully"
+                echo "Pushed successfully"
                 exit 0
               fi
-              echo "⚠️ Push rejected (attempt $i), rebasing..."
-              # إلغاء أي rebase عالق
+              echo "Push rejected (attempt $i), rebasing..."
               git rebase --abort 2>/dev/null || true
-              # سحب التغييرات مع الأولوية لملفنا عند التعارض
               git pull --rebase -X theirs origin main || {
-                # لو فشل الـ rebase، نعيد البناء من الريموت
                 git rebase --abort 2>/dev/null || true
                 git fetch origin main
                 git reset --hard origin/main
-                git checkout HEAD -- news_seen.json 2>/dev/null || true
-                cp news_seen.json /tmp/seen_backup.json 2>/dev/null || true
-                python3 -c "
-import json
-local = json.load(open('/tmp/seen_backup.json')) if __import__('os').path.exists('/tmp/seen_backup.json') else {}
-print('Merged seen state')
-" || true
-                git add news_seen.json
-                git commit -m "update seen state" || true
+                git add news_seen.json 2>/dev/null || true
+                git commit -m "update seen state" 2>/dev/null || true
               }
             done
-            echo "⚠️ Push failed, state will be saved next run"
+            echo "Push failed, state will be saved next run"
             exit 0
           fi

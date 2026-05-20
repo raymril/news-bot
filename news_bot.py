@@ -37,11 +37,14 @@ FEEDS = [
     ("Google ترامب",    "https://news.google.com/rss/search?q=%D8%AA%D8%B1%D8%A7%D9%85%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
 ]
 
-# ===== كلمات الأخبار العاجلة (أولوية عالية) =====
-BREAKING_KEYWORDS = [
-    "عاجل", "خبر عاجل", "عاجل |", "| عاجل",
-    "BREAKING", "Breaking News", "JUST IN",
-    "بيان عاجل", "تطور عاجل", "الآن",
+# ===== كشف الأخبار العاجلة الحقيقية =====
+# فقط لو المصدر نفسه كتب "عاجل" أو "BREAKING" بالعنوان
+BREAKING_PATTERNS = [
+    r'^عاجل\s*[:|]',       # يبدأ بـ "عاجل:" أو "عاجل |"
+    r'^\|\s*عاجل',          # يبدأ بـ "| عاجل"
+    r'^BREAKING\s*[:|]',    # BREAKING: أو BREAKING |
+    r'^JUST IN\s*[:|]',     # JUST IN:
+    r'خبر عاجل',            # "خبر عاجل" في أي مكان
 ]
 
 # ===== الكلمات المفتاحية =====
@@ -101,10 +104,10 @@ def save_state(seen, last_regular):
             "last_regular": last_regular,
         }, f, ensure_ascii=False)
 
-def is_breaking(text):
-    """هل الخبر عاجل؟"""
-    for kw in BREAKING_KEYWORDS:
-        if kw.lower() in text.lower():
+def is_breaking(title):
+    """هل الخبر عاجل؟ فقط إذا المصدر نفسه وسمه عاجل بالعنوان"""
+    for pat in BREAKING_PATTERNS:
+        if re.search(pat, title, re.IGNORECASE):
             return True
     return False
 
@@ -381,7 +384,7 @@ def main():
             item = (source_name, title, desc, link, image, video)
 
             # تصنيف: عاجل أم يومي
-            if is_breaking(f"{title} {desc}"):
+            if is_breaking(title):
                 breaking_items.append(item)
             else:
                 regular_items.append(item)

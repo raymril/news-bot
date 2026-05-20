@@ -428,12 +428,42 @@ def send_telegram(text):
     })
     return ok
 
+# كلمات تدل على خبر عاجل مهم (يستحق تلخيص)
+IMPORTANT_BREAKING = [
+    "حرب", "هجوم", "قصف", "غارة", "صاروخ", "اجتياح", "اغتيال",
+    "نووي", "تصعيد كبير", "إعلان حرب", "وقف إطلاق النار",
+    "انسحاب", "اتفاق", "معاهدة", "عقوبات جديدة",
+]
+
+def is_important_breaking(title, desc):
+    """هل الخبر العاجل مهم بما يكفي للتلخيص؟"""
+    text = f"{title} {desc}".lower()
+    # تصريح قائد = مهم
+    if has_leader(f"{title} {desc}"):
+        return True
+    # حدث عسكري/دبلوماسي كبير = مهم
+    for kw in IMPORTANT_BREAKING:
+        if kw in text:
+            return True
+    return False
+
 # ===== بناء وإرسال خبر =====
 def process_and_send(item, is_urgent):
     """معالجة خبر واحد وإرساله"""
     source_name, title, desc, link, image, video = item
 
-    body = rewrite_news(title, desc, source_name)
+    if is_urgent:
+        # عاجل عادي: بدون تلخيص، نص أصلي مرتب
+        # عاجل مهم: يلخّص عبر Gemini
+        if is_important_breaking(title, desc):
+            body = rewrite_news(title, desc, source_name)
+            print(f"  🔴⭐ عاجل مهم → تلخيص Gemini")
+        else:
+            # تنظيف النص الأصلي وإرساله مباشر
+            body = desc[:600] if desc and desc != title else ""
+    else:
+        # يومي: دائماً يلخّص عبر Gemini
+        body = rewrite_news(title, desc, source_name)
 
     # محاولة ترجمة الفيديو وحرق الترجمة داخله
     video_local = None
@@ -453,11 +483,10 @@ def process_and_send(item, is_urgent):
     if is_urgent:
         caption_lines.append("🔴 <b>عاجل</b>")
         caption_lines.append("")
-    caption_lines.extend([
-        f"<b>{title}</b>",
-        "",
-        body,
-    ])
+    caption_lines.append(f"<b>{title}</b>")
+    if body:
+        caption_lines.append("")
+        caption_lines.append(body)
     if video_local:
         caption_lines.append("")
         caption_lines.append("🎙 <i>ترجمة عربية مدمجة</i>")

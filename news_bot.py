@@ -17,12 +17,31 @@ gemini = genai.Client(api_key=GEMINI_KEY)
 
 # ===== المصادر الإخبارية =====
 FEEDS = [
+    # --- مصادر عربية أساسية ---
     ("BBC عربي",        "https://feeds.bbci.co.uk/arabic/rss.xml"),
     ("الجزيرة",          "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"),
     ("RT عربي",         "https://arabic.rt.com/rss/"),
     ("العربية - إيران",   "https://www.alarabiya.net/feed/rss2/ar/iran.xml"),
     ("CNN عربي",        "https://arabic.cnn.com/api/v1/rss/rss.xml"),
     ("AP",              "https://feedx.net/rss/ap.xml"),
+    # --- وكالات أنباء عالمية (أخبار عاجلة) ---
+    ("Reuters",         "https://feedx.net/rss/reuters.xml"),
+    ("AFP",             "https://feedx.net/rss/afp.xml"),
+    # --- Google News عاجل (بحث مخصص) ---
+    ("Google إيران-إسرائيل", "https://news.google.com/rss/search?q=%D8%A5%D9%8A%D8%B1%D8%A7%D9%86+%D8%A5%D8%B3%D8%B1%D8%A7%D8%A6%D9%8A%D9%84&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google غزة",          "https://news.google.com/rss/search?q=%D8%BA%D8%B2%D8%A9+%D8%AD%D8%B1%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google روسيا-أوكرانيا", "https://news.google.com/rss/search?q=%D8%B1%D9%88%D8%B3%D9%8A%D8%A7+%D8%A3%D9%88%D9%83%D8%B1%D8%A7%D9%86%D9%8A%D8%A7&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google ترامب",        "https://news.google.com/rss/search?q=%D8%AA%D8%B1%D8%A7%D9%85%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
+    # --- العربية أقسام إضافية ---
+    ("العربية - عاجل",   "https://www.alarabiya.net/feed/rss2/ar.xml"),
+    ("سكاي نيوز عربية", "https://www.skynewsarabia.com/web/rss"),
+]
+
+# ===== كلمات الأخبار العاجلة (أولوية عالية) =====
+BREAKING_KEYWORDS = [
+    "عاجل", "خبر عاجل", "عاجل |", "| عاجل",
+    "BREAKING", "Breaking News", "JUST IN",
+    "بيان عاجل", "تطور عاجل", "الآن",
 ]
 
 # ===== الكلمات المفتاحية =====
@@ -69,6 +88,13 @@ def load_seen():
 def save_seen(seen):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(list(seen)[-3000:], f, ensure_ascii=False)
+
+def is_breaking(text):
+    """هل الخبر عاجل؟"""
+    for kw in BREAKING_KEYWORDS:
+        if kw.lower() in text.lower():
+            return True
+    return False
 
 def matches_keywords(text):
     """
@@ -397,7 +423,7 @@ def main():
     seen = load_seen()
     is_first_run = len(seen) == 0
     total_sent = 0
-    MAX_PER_RUN = 8  # سقف الأخبار لكل تشغيل لتجنب الإغراق
+    MAX_PER_RUN = 12  # سقف الأخبار لكل تشغيل لتجنب الإغراق
 
     if is_first_run:
         send_telegram(
@@ -450,11 +476,16 @@ def main():
                     try: os.unlink(src_video)
                     except: pass
 
-            caption_lines = [
+            breaking = is_breaking(f"{title} {desc}")
+            caption_lines = []
+            if breaking:
+                caption_lines.append("🔴 <b>عاجل</b>")
+                caption_lines.append("")
+            caption_lines.extend([
                 f"<b>{title}</b>",
                 "",
                 body,
-            ]
+            ])
             if video_local:
                 caption_lines.append("")
                 caption_lines.append("🎙 <i>ترجمة عربية مدمجة</i>")

@@ -136,7 +136,13 @@ def matches_keywords(text):
     return None
 
 def clean_html(text):
-    text = re.sub(r'<[^>]+>', '', text or "")
+    import html as html_mod
+    text = text or ""
+    text = re.sub(r'<[^>]+>', '', text)       # إزالة تاقات HTML
+    text = html_mod.unescape(text)             # تحويل &nbsp; &amp; وغيرها
+    text = text.replace('\xa0', ' ')           # مسافات غير قابلة للكسر
+    # إزالة اسم المصدر المكرر في نهاية العنوان (مثل " - Anadolu Ajansı")
+    text = re.sub(r'\s*[-–—|]\s*[A-Za-zÀ-ɏ\s]{3,30}$', '', text)
     return re.sub(r'\s+', ' ', text).strip()
 
 def extract_media(entry):

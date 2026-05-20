@@ -43,5 +43,15 @@ jobs:
           if [ -n "$(git status --porcelain news_seen.json)" ]; then
             git add news_seen.json
             git commit -m "update seen state"
-            git push
+            # حاول الدفع مع إعادة المحاولة عند تعارض
+            for i in 1 2 3; do
+              if git push; then
+                echo "✅ Pushed successfully"
+                exit 0
+              fi
+              echo "⚠️ Push rejected (attempt $i), rebasing..."
+              git pull --rebase origin main || true
+            done
+            echo "❌ Failed to push after 3 attempts"
+            exit 1
           fi

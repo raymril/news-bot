@@ -16,25 +16,24 @@ STATE_FILE     = "news_seen.json"
 gemini = genai.Client(api_key=GEMINI_KEY)
 
 # ===== المصادر الإخبارية =====
-# المصادر الأسرع أولاً (عاجلة)
 FEEDS = [
-    # --- الجزيرة عاجل (أسرع مصدر عربي) ---
-    ("الجزيرة عاجل",    "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"),
-    # --- وكالات عالمية (سريعة جداً) ---
+    # --- الجزيرة (أسرع مصدر عربي) ---
+    ("الجزيرة",          "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"),
+    # --- وكالات عالمية ---
     ("Reuters",         "https://feedx.net/rss/reuters.xml"),
     ("AFP",             "https://feedx.net/rss/afp.xml"),
     ("AP",              "https://feedx.net/rss/ap.xml"),
-    # --- عربية سريعة ---
+    # --- عربية ---
     ("العربية",          "https://www.alarabiya.net/feed/rss2/ar.xml"),
     ("سكاي نيوز",       "https://www.skynewsarabia.com/web/rss"),
-    ("RT عربي",         "https://arabic.rt.com/rss/"),
-    ("BBC عربي",        "https://feeds.bbci.co.uk/arabic/rss.xml"),
-    ("CNN عربي",        "https://arabic.cnn.com/api/v1/rss/rss.xml"),
-    # --- Google News عاجل (أوسع تغطية) ---
-    ("Google عاجل",     "https://news.google.com/rss/search?q=%D8%B9%D8%A7%D8%AC%D9%84+%D8%A5%D9%8A%D8%B1%D8%A7%D9%86+OR+%D8%A5%D8%B3%D8%B1%D8%A7%D8%A6%D9%8A%D9%84+OR+%D8%BA%D8%B2%D8%A9+OR+%D8%AA%D8%B1%D8%A7%D9%85%D8%A8+OR+%D8%A8%D9%88%D8%AA%D9%8A%D9%86&hl=ar&gl=SA&ceid=SA:ar"),
-    ("Google غزة",      "https://news.google.com/rss/search?q=%D8%BA%D8%B2%D8%A9&hl=ar&gl=SA&ceid=SA:ar"),
-    ("Google إيران",    "https://news.google.com/rss/search?q=%D8%A5%D9%8A%D8%B1%D8%A7%D9%86&hl=ar&gl=SA&ceid=SA:ar"),
-    ("Google ترامب",    "https://news.google.com/rss/search?q=%D8%AA%D8%B1%D8%A7%D9%85%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
+    ("RT",              "https://arabic.rt.com/rss/"),
+    ("BBC",             "https://feeds.bbci.co.uk/arabic/rss.xml"),
+    ("CNN",             "https://arabic.cnn.com/api/v1/rss/rss.xml"),
+    # --- Google News ---
+    ("Google News",     "https://news.google.com/rss/search?q=%D8%B9%D8%A7%D8%AC%D9%84+%D8%A5%D9%8A%D8%B1%D8%A7%D9%86+OR+%D8%A5%D8%B3%D8%B1%D8%A7%D8%A6%D9%8A%D9%84+OR+%D8%BA%D8%B2%D8%A9+OR+%D8%AA%D8%B1%D8%A7%D9%85%D8%A8+OR+%D8%A8%D9%88%D8%AA%D9%8A%D9%86&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google News",     "https://news.google.com/rss/search?q=%D8%BA%D8%B2%D8%A9&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google News",     "https://news.google.com/rss/search?q=%D8%A5%D9%8A%D8%B1%D8%A7%D9%86&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google News",     "https://news.google.com/rss/search?q=%D8%AA%D8%B1%D8%A7%D9%85%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
 ]
 
 # ===== كشف الأخبار العاجلة الحقيقية =====
@@ -177,6 +176,25 @@ def is_duplicate_title(new_title, existing_titles):
             return True
     return False
 
+def fetch_og_image(url):
+    """جلب صورة og:image من صفحة المقال"""
+    if not url:
+        return None
+    try:
+        r = requests.get(url, timeout=8, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
+        })
+        if r.status_code == 200:
+            # og:image
+            m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', r.text)
+            if not m:
+                m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', r.text)
+            if m:
+                return m.group(1)
+    except:
+        pass
+    return None
+
 def extract_media(entry):
     """استخراج صورة أو فيديو من الـ RSS entry"""
     image = None
@@ -214,18 +232,30 @@ def extract_media(entry):
         if m:
             image = m.group(1)
 
+    # 5. جلب og:image من صفحة المقال (آخر محاولة)
+    if not image:
+        link = entry.get("link", "")
+        image = fetch_og_image(link)
+
     return image, video
 
 
 def rewrite_news(title, description, source):
     """إعادة صياغة الخبر بأسلوب وكالات الأنباء"""
-    prompt = f"""صِغ هذا الخبر بفقرة واحدة (3-4 جمل) بالعربية الفصحى بأسلوب رويترز.
-- محايد وجاد بدون إيموجي أو نقاط.
-- ابدأ بمصدر التصريح الرسمي (البيت الأبيض، الكرملين، وزارة الدفاع...) وليس اسم القناة.
-- لا تكرر العنوان حرفياً. اكتب مباشرة بدون مقدمة.
+    prompt = f"""أعد كتابة هذا الخبر كفقرة إخبارية كاملة ومفهومة (4-5 جمل) بالعربية الفصحى.
 
-{title}
-{description}"""
+القواعد:
+- اكتب فقرة مستقلة يفهمها القارئ بدون الحاجة لقراءة المصدر الأصلي.
+- أسلوب وكالة رويترز: محايد، جاد، بدون إيموجي أو نقاط أو عناوين.
+- وضّح السياق: من فعل ماذا ولماذا وما التبعات.
+- إذا فيه تصريح رسمي، اذكر مصدره الحقيقي (البيت الأبيض، الكرملين، وزارة الخارجية...) وليس اسم القناة الإعلامية.
+- لا تنسخ من النص الأصلي حرفياً، أعد الصياغة بالكامل.
+- لا تبدأ بـ "أعلن" أو "ذكرت مصادر"، ابدأ مباشرة بالحدث.
+- اكتب الفقرة مباشرة بدون أي مقدمة أو تعليق.
+
+الخبر الأصلي:
+العنوان: {title}
+التفاصيل: {description}"""
 
     for attempt in range(2):
         try:

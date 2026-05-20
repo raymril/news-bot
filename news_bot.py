@@ -214,19 +214,22 @@ def rewrite_news(title, description, source):
 {title}
 {description}"""
 
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             r = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
             return r.text.strip()
         except Exception as e:
-            if "429" in str(e) and attempt < 2:
-                wait = (attempt + 1) * 15
-                print(f"  ⏳ Gemini rate limit، انتظار {wait}s...")
-                time.sleep(wait)
+            if "429" in str(e) and attempt < 1:
+                print(f"  ⏳ Gemini rate limit، إعادة بعد 10s...")
+                time.sleep(10)
             else:
-                print(f"خطأ Gemini: {e}")
-                return description[:500]
-    return description[:500]
+                print(f"  ⚠ Gemini: {str(e)[:80]}")
+                # fallback: العنوان + جزء من الوصف
+                fallback = title
+                if description and description != title:
+                    fallback += f". {description[:300]}"
+                return fallback
+    return title
 
 def tg_api(method, payload=None, files=None):
     try:
@@ -278,42 +281,17 @@ def send_telegram(text):
     })
     return ok
 
-# كلمات تدل على خبر عاجل مهم (يستحق تلخيص)
-IMPORTANT_BREAKING = [
-    "حرب", "هجوم", "قصف", "غارة", "صاروخ", "اجتياح", "اغتيال",
-    "نووي", "تصعيد كبير", "إعلان حرب", "وقف إطلاق النار",
-    "انسحاب", "اتفاق", "معاهدة", "عقوبات جديدة",
-]
-
-def is_important_breaking(title, desc):
-    """هل الخبر العاجل مهم بما يكفي للتلخيص؟"""
-    text = f"{title} {desc}".lower()
-    for kw in IMPORTANT_BREAKING:
-        if kw in text:
-            return True
-    # أي كلمة أساسية من القادة = مهم
-    for ldr in ["ترامب", "بوتين", "نتنياهو", "خامنئي", "زيلينسكي", "بايدن"]:
-        if ldr in text:
-            return True
-    return False
-
 # ===== بناء وإرسال خبر =====
 def process_and_send(item, is_urgent):
     """معالجة خبر واحد وإرساله"""
     source_name, title, desc, link, image, video = item
 
     if is_urgent:
-        # عاجل: العنوان فقط بدون تلخيص
-        if is_important_breaking(title, desc):
-            body = rewrite_news(title, desc, source_name)
-        else:
-            body = None
-        caption = f"🔴 <b>{title}</b>"
-        if body:
-            caption += f"\n\n{body}"
-        caption += f"\n\n<i>{source_name}</i>"
+        # عاجل: سطر واحد نظيف
+        # عاجل | النص
+        caption = f"عاجل | {title}"
     else:
-        # يومي: فقرة ملخّصة (بدون عنوان منفصل)
+        # يومي: ملخّص Gemini + مصدر
         body = rewrite_news(title, desc, source_name)
         caption = f"{body}\n\n<i>{source_name}</i>"
 
@@ -325,11 +303,7 @@ def process_and_send(item, is_urgent):
 
     if sent:
         tag = "🔴" if is_urgent else "📰"
-        if video:
-            tag = "🎥"
-        elif image:
-            tag = "🖼"
-        print(f"  ✓ {tag} [{source_name}] {title[:60]}")
+        print(f"  ✓ {tag} [{source_name}] {title[:50]}")
 
     return sent
 
@@ -340,14 +314,6 @@ def main():
 
     seen, last_regular = load_state()
     is_first_run = len(seen) == 0
-
-    if is_first_run:
-        send_telegram(
-            "📡 <b>بوت الأخبار جاهز</b>\n\n"
-            "🔴 الأخبار العاجلة: فورية (كل 10 دقائق)\n"
-            "📰 الأخبار اليومية: كل ساعتين\n\n"
-            "المصادر: BBC • الجزيرة • RT • العربية • CNN • AP • Reuters • AFP • سكاي نيوز • Google News"
-        )
 
     # ===== جمع كل الأخبار الجديدة =====
     breaking_items = []   # أخبار عاجلة → فورية
@@ -405,18 +371,18 @@ def main():
     sent_regular = 0
     MAX_REGULAR = 8
     time_since_last = now - last_regular
-    regular_due = time_since_last >= REGULAR_INTERVAL or is_first_run
+    regular_due = time_since_last >= REGULAR_INTERVAL or last_regular == 0
 
     if regular_items and regular_due:
-        print(f"\n📰 أخبار يومية: {len(regular_items)} (آخر دفعة قبل {time_since_last/60:.0f} دقيقة)")
+        print(f"\n📰 أخبار يومية: {len(regular_items)}")
         for item in regular_items[:MAX_REGULAR]:
             if process_and_send(item, is_urgent=False):
                 sent_regular += 1
                 time.sleep(10)
-        last_regular = now  # تحديث وقت آخر دفعة
+        last_regular = now
     elif regular_items:
-        remaining = REGULAR_INTERVAL - time_since_last
-        print(f"\n📰 {len(regular_items)} خبر يومي محفوظ (الدفعة القادمة بعد {remaining/60:.0f} دقيقة)")
+        remaining = max(0, REGULAR_INTERVAL - time_since_last)
+        print(f"\n📰 {len(regular_items)} يومي (بعد {remaining/60:.0f} دقيقة)")
 
     save_state(seen, last_regular)
     print(f"\n✅ عاجل: {sent_breaking} | يومي: {sent_regular} | المتابعة: {len(seen)}")

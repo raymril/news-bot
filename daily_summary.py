@@ -123,7 +123,7 @@ def build_summary(items):
 - اختم بسطر: <i>المصادر: BBC، الجزيرة، RT، العربية، CNN، AP</i>"""
 
     try:
-        r = gemini.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
+        r = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         return r.text.strip()
     except Exception as e:
         print(f"خطأ Gemini: {e}")

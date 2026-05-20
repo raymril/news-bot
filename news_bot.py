@@ -264,7 +264,7 @@ def gen_srt(video_path):
 ابدأ مباشرة بالرقم 1."""
 
         r = gemini.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-2.0-flash",
             contents=[uploaded, prompt]
         )
         srt = r.text.strip()
@@ -344,12 +344,19 @@ def rewrite_news(title, description, source):
 - لا تكرر العنوان حرفياً.
 - اكتب الخبر مباشرة بدون مقدمات."""
 
-    try:
-        r = gemini.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
-        return r.text.strip()
-    except Exception as e:
-        print(f"خطأ Gemini: {e}")
-        return description[:500]
+    for attempt in range(3):
+        try:
+            r = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+            return r.text.strip()
+        except Exception as e:
+            if "429" in str(e) and attempt < 2:
+                wait = (attempt + 1) * 15
+                print(f"  ⏳ Gemini rate limit، انتظار {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"خطأ Gemini: {e}")
+                return description[:500]
+    return description[:500]
 
 def tg_api(method, payload=None, files=None):
     try:

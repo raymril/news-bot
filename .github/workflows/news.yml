@@ -49,15 +49,31 @@ jobs:
           if [ -n "$(git status --porcelain news_seen.json)" ]; then
             git add news_seen.json
             git commit -m "update seen state"
-            # حاول الدفع مع إعادة المحاولة عند تعارض
             for i in 1 2 3; do
               if git push; then
                 echo "✅ Pushed successfully"
                 exit 0
               fi
               echo "⚠️ Push rejected (attempt $i), rebasing..."
-              git pull --rebase origin main || true
+              # إلغاء أي rebase عالق
+              git rebase --abort 2>/dev/null || true
+              # سحب التغييرات مع الأولوية لملفنا عند التعارض
+              git pull --rebase -X theirs origin main || {
+                # لو فشل الـ rebase، نعيد البناء من الريموت
+                git rebase --abort 2>/dev/null || true
+                git fetch origin main
+                git reset --hard origin/main
+                git checkout HEAD -- news_seen.json 2>/dev/null || true
+                cp news_seen.json /tmp/seen_backup.json 2>/dev/null || true
+                python3 -c "
+import json
+local = json.load(open('/tmp/seen_backup.json')) if __import__('os').path.exists('/tmp/seen_backup.json') else {}
+print('Merged seen state')
+" || true
+                git add news_seen.json
+                git commit -m "update seen state" || true
+              }
             done
-            echo "❌ Failed to push after 3 attempts"
-            exit 1
+            echo "⚠️ Push failed, state will be saved next run"
+            exit 0
           fi

@@ -299,14 +299,14 @@ def process_and_send(item, is_urgent):
     """معالجة خبر واحد وإرساله"""
     source_name, title, desc, link, image, video = item
 
+    clean_title = clean_breaking_title(title)
+
     if is_urgent:
-        # عاجل: نظيف بدون تكرار "عاجل" وبدون اسم قناة
-        clean_title = clean_breaking_title(title)
+        # عاجل | نص الخبر
         caption = f"عاجل | {clean_title}"
     else:
-        # يومي: ملخّص Gemini + مصدر
-        body = rewrite_news(title, desc, source_name)
-        caption = f"{body}\n\n<i>{source_name}</i>"
+        # المصدر | نص الخبر
+        caption = f"{source_name} | {clean_title}"
 
     sent = send_news(
         caption,

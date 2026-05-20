@@ -3,7 +3,7 @@
 بوت أخبار حية - يعمل على GitHub Actions كل 10 دقائق
 يتابع القنوات الإخبارية ويرسل ملخصات الأخبار العاجلة عبر Telegram
 """
-import feedparser, requests, json, os, re, time, tempfile, subprocess
+import feedparser, requests, json, os, re, time
 from datetime import datetime
 from google import genai
 
@@ -184,148 +184,6 @@ def extract_media(entry):
 
     return image, video
 
-# قادة مهمون - الفيديو يحتاج ترجمة لو ذُكر اسمهم
-LEADERS_FOR_VIDEO = [
-    "ترامب", "بوتين", "نتنياهو", "خامنئي", "بزشكيان", "زيلينسكي", "بايدن",
-    "محمد بن سلمان", "السيسي", "أردوغان", "ماكرون", "شي جين بينغ",
-    "نصرالله", "نصر الله", "السنوار", "هنية", "الحوثي", "الأسد",
-    "Trump", "Putin", "Netanyahu", "Khamenei", "Zelensky", "Biden", "Erdogan",
-]
-
-def has_leader(text):
-    for ldr in LEADERS_FOR_VIDEO:
-        if ldr in text:
-            return ldr
-    return None
-
-def download_video(url, max_mb=45, timeout=60):
-    """تنزيل فيديو مع فحص الحجم"""
-    try:
-        head = requests.head(url, allow_redirects=True, timeout=10)
-        size = int(head.headers.get("content-length", 0))
-        if size and size > max_mb * 1024 * 1024:
-            print(f"  ⊘ فيديو كبير جداً ({size/1024/1024:.1f}MB)")
-            return None
-    except:
-        pass
-
-    try:
-        r = requests.get(url, timeout=timeout, stream=True)
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        total = 0
-        for chunk in r.iter_content(chunk_size=65536):
-            tmp.write(chunk)
-            total += len(chunk)
-            if total > max_mb * 1024 * 1024:
-                tmp.close()
-                os.unlink(tmp.name)
-                print(f"  ⊘ تجاوز الحد أثناء التنزيل")
-                return None
-        tmp.close()
-        return tmp.name
-    except Exception as e:
-        print(f"  خطأ تنزيل الفيديو: {e}")
-        return None
-
-def gen_srt(video_path):
-    """رفع الفيديو لـ Gemini وتوليد ملف SRT بالعربية"""
-    uploaded = None
-    try:
-        uploaded = gemini.files.upload(file=video_path)
-        for _ in range(60):
-            uploaded = gemini.files.get(name=uploaded.name)
-            if uploaded.state.name != "PROCESSING":
-                break
-            time.sleep(2)
-
-        if uploaded.state.name == "FAILED":
-            print("  ✗ فشلت معالجة الفيديو في Gemini")
-            return None
-
-        prompt = """أنشئ ترجمة عربية كاملة لهذا الفيديو بصيغة SRT.
-
-التعليمات الصارمة:
-- اقتصر على الكلام المنطوق (تجاهل الموسيقى).
-- ترجم بأمانة إلى العربية الفصحى الواضحة.
-- كل مقطع ترجمة 2-4 ثوانٍ كحد أقصى.
-- استخدم توقيتات دقيقة بصيغة HH:MM:SS,mmm
-- لا تكتب أي تعليق أو شرح، فقط ملف SRT خام.
-
-الصيغة المطلوبة بالضبط (لا تستخدم backticks ولا أكواد markdown):
-
-1
-00:00:00,500 --> 00:00:03,200
-النص العربي هنا
-
-2
-00:00:03,300 --> 00:00:06,000
-النص الثاني هنا
-
-ابدأ مباشرة بالرقم 1."""
-
-        r = gemini.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[uploaded, prompt]
-        )
-        srt = r.text.strip()
-        srt = re.sub(r'^```\w*\s*', '', srt)
-        srt = re.sub(r'\s*```\s*$', '', srt)
-        if "-->" not in srt:
-            return None
-        return srt
-    except Exception as e:
-        print(f"  خطأ توليد SRT: {e}")
-        return None
-    finally:
-        if uploaded:
-            try: gemini.files.delete(name=uploaded.name)
-            except: pass
-
-def burn_subtitles(video_path, srt_text):
-    """حرق ترجمة SRT داخل الفيديو عبر ffmpeg وإرجاع مسار الفيديو الناتج"""
-    try:
-        srt_file = tempfile.NamedTemporaryFile(suffix=".srt", delete=False,
-                                                mode="w", encoding="utf-8")
-        srt_file.write(srt_text)
-        srt_file.close()
-
-        out = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        out.close()
-
-        style = (
-            "FontName=Noto Sans Arabic,"
-            "FontSize=20,"
-            "PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00000000,"
-            "BackColour=&H80000000,"
-            "BorderStyle=1,"
-            "Outline=2,"
-            "Shadow=1,"
-            "Alignment=2,"
-            "MarginV=25"
-        )
-        cmd = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-vf", f"subtitles={srt_file.name}:force_style='{style}'",
-            "-c:a", "copy",
-            "-preset", "ultrafast",
-            "-crf", "28",
-            out.name,
-        ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        os.unlink(srt_file.name)
-
-        if proc.returncode != 0:
-            print(f"  ✗ ffmpeg فشل:\n{proc.stderr[-500:]}")
-            try: os.unlink(out.name)
-            except: pass
-            return None
-
-        print(f"  ✓ حرق الترجمة ({os.path.getsize(out.name)/1024/1024:.1f}MB)")
-        return out.name
-    except Exception as e:
-        print(f"  خطأ حرق الترجمة: {e}")
-        return None
 
 def rewrite_news(title, description, source):
     """إعادة صياغة الخبر بأسلوب وكالات الأنباء العالمية"""
@@ -370,46 +228,13 @@ def tg_api(method, payload=None, files=None):
         print(f"خطأ Telegram ({method}): {e}")
         return False, {}
 
-def send_video_file(path, caption):
-    """رفع فيديو محلي إلى تلقرام"""
-    try:
-        with open(path, "rb") as f:
-            files = {"video": f}
-            data = {
-                "chat_id": CHAT_ID,
-                "caption": caption[:1020] if len(caption) > 1020 else caption,
-                "parse_mode": "HTML",
-            }
-            ok, _ = tg_api("sendVideo", payload=data, files=files)
-            return ok
-    except Exception as e:
-        print(f"  خطأ رفع الفيديو: {e}")
-        return False
-
-def send_long_text(text):
-    """إرسال نص طويل كرسالة منفصلة"""
-    # تقسيم على 4000 حرف
-    for i in range(0, len(text), 4000):
-        chunk = text[i:i+4000]
-        tg_api("sendMessage", {
-            "chat_id": CHAT_ID, "text": chunk,
-            "parse_mode": "HTML", "disable_web_page_preview": True
-        })
-        time.sleep(1)
-
-def send_news(caption, image=None, video=None, video_local_path=None):
+def send_news(caption, image=None, video=None):
     """إرسال الخبر - الميديا فوق والنص تحت"""
     short_caption = caption[:1020] + "…" if len(caption) > 1020 else caption
 
     sent_media = False
 
-    # 1) فيديو محلي مترجم (نرفعه كملف - يعمل في مشغل تلقرام)
-    if video_local_path and os.path.exists(video_local_path):
-        sent_media = send_video_file(video_local_path, short_caption)
-        try: os.unlink(video_local_path)
-        except: pass
-
-    # 2) فيديو بـ URL
+    # 1) فيديو بـ URL
     if not sent_media and video:
         ok, _ = tg_api("sendVideo", {
             "chat_id": CHAT_ID, "video": video,
@@ -451,12 +276,12 @@ IMPORTANT_BREAKING = [
 def is_important_breaking(title, desc):
     """هل الخبر العاجل مهم بما يكفي للتلخيص؟"""
     text = f"{title} {desc}".lower()
-    # تصريح قائد = مهم
-    if has_leader(f"{title} {desc}"):
-        return True
-    # حدث عسكري/دبلوماسي كبير = مهم
     for kw in IMPORTANT_BREAKING:
         if kw in text:
+            return True
+    # أي كلمة أساسية من القادة = مهم
+    for ldr in ["ترامب", "بوتين", "نتنياهو", "خامنئي", "زيلينسكي", "بايدن"]:
+        if ldr in text:
             return True
     return False
 
@@ -478,20 +303,6 @@ def process_and_send(item, is_urgent):
         # يومي: دائماً يلخّص عبر Gemini
         body = rewrite_news(title, desc, source_name)
 
-    # محاولة ترجمة الفيديو وحرق الترجمة داخله
-    video_local = None
-    leader = has_leader(f"{title} {desc}")
-    if video and leader:
-        print(f"  🎙 محاولة ترجمة فيديو ({leader})...")
-        src_video = download_video(video)
-        if src_video:
-            srt_text = gen_srt(src_video)
-            if srt_text:
-                print(f"  📝 SRT ({len(srt_text)} حرف)")
-                video_local = burn_subtitles(src_video, srt_text)
-            try: os.unlink(src_video)
-            except: pass
-
     caption_lines = []
     if is_urgent:
         caption_lines.append("🔴 <b>عاجل</b>")
@@ -500,9 +311,6 @@ def process_and_send(item, is_urgent):
     if body:
         caption_lines.append("")
         caption_lines.append(body)
-    if video_local:
-        caption_lines.append("")
-        caption_lines.append("🎙 <i>ترجمة عربية مدمجة</i>")
     caption_lines.extend([
         "",
         "━━━━━━━━━━━━━━",
@@ -514,15 +322,12 @@ def process_and_send(item, is_urgent):
     sent = send_news(
         caption,
         image=image,
-        video=video if not video_local else None,
-        video_local_path=video_local,
+        video=video,
     )
 
     if sent:
         tag = "🔴" if is_urgent else "📰"
-        if video_local:
-            tag = "🎙"
-        elif video:
+        if video:
             tag = "🎥"
         elif image:
             tag = "🖼"

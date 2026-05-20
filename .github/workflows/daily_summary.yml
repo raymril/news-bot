@@ -1,0 +1,30 @@
+name: Daily Leaders Summary
+
+on:
+  schedule:
+    - cron: '0 20 * * *'   # 20:00 UTC = 23:00 الرياض
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Send daily summary
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID:        ${{ secrets.CHAT_ID }}
+          GEMINI_KEY:     ${{ secrets.GEMINI_KEY }}
+        run: python daily_summary.py

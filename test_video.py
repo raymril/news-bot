@@ -36,8 +36,30 @@ def tg_send_video(path, caption):
         )
     return r.status_code == 200, r.json()
 
-def download(url, max_mb=45):
-    print(f"⬇️ تنزيل: {url}")
+def download_youtube(url, max_mb=45):
+    """تنزيل من YouTube عبر yt-dlp"""
+    print(f"⬇️ YouTube: {url}")
+    out_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
+    os.unlink(out_path)  # yt-dlp يطلب الملف غير موجود
+    cmd = [
+        "yt-dlp",
+        "-f", "best[ext=mp4][filesize<45M]/best[ext=mp4]/best",
+        "--max-filesize", f"{max_mb}M",
+        "--no-playlist",
+        "-o", out_path,
+        url,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+    if proc.returncode != 0 or not os.path.exists(out_path):
+        print(f"  ✗ yt-dlp فشل:\n{proc.stderr[-1000:]}")
+        return None
+    size = os.path.getsize(out_path)
+    print(f"  ✓ نُزّل ({size/1024/1024:.2f}MB)")
+    return out_path
+
+def download_direct(url, max_mb=45):
+    """تنزيل مباشر لرابط .mp4"""
+    print(f"⬇️ مباشر: {url}")
     r = requests.get(url, timeout=120, stream=True,
                      headers={"User-Agent": "Mozilla/5.0"})
     if r.status_code != 200:
@@ -56,6 +78,11 @@ def download(url, max_mb=45):
     tmp.close()
     print(f"  ✓ نُزّل ({total/1024/1024:.2f}MB)")
     return tmp.name
+
+def download(url, max_mb=45):
+    if any(host in url for host in ["youtube.com", "youtu.be", "twitter.com", "x.com", "tiktok.com"]):
+        return download_youtube(url, max_mb)
+    return download_direct(url, max_mb)
 
 def gen_srt(video_path):
     """توليد ملف SRT مع توقيتات وترجمة عربية"""

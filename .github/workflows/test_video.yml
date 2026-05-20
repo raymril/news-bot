@@ -32,7 +32,9 @@ jobs:
           fc-cache -fv
           ffmpeg -version | head -1
 
-      - run: pip install -r requirements.txt
+      - run: |
+          pip install -r requirements.txt
+          pip install yt-dlp
 
       - name: Run test
         env:

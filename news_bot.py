@@ -138,12 +138,34 @@ def matches_keywords(text):
 def clean_html(text):
     import html as html_mod
     text = text or ""
-    text = re.sub(r'<[^>]+>', '', text)       # إزالة تاقات HTML
-    text = html_mod.unescape(text)             # تحويل &nbsp; &amp; وغيرها
-    text = text.replace('\xa0', ' ')           # مسافات غير قابلة للكسر
-    # إزالة اسم المصدر المكرر في نهاية العنوان (مثل " - Anadolu Ajansı")
+    text = re.sub(r'<[^>]+>', '', text)
+    text = html_mod.unescape(text)
+    text = text.replace('\xa0', ' ')
     text = re.sub(r'\s*[-–—|]\s*[A-Za-zÀ-ɏ\s]{3,30}$', '', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+def normalize_title(title):
+    """تطبيع العنوان لكشف التكرار"""
+    t = re.sub(r'[^\w\s]', '', title.lower())
+    # إزالة كلمات شائعة
+    stop = {"في", "من", "إلى", "على", "عن", "أن", "هل", "بعد", "قبل", "بين", "مع", "هذا", "هذه", "التي", "الذي", "ان"}
+    words = [w for w in t.split() if w not in stop and len(w) > 2]
+    return set(words)
+
+def is_duplicate_title(new_title, existing_titles):
+    """هل العنوان مكرر (تشابه 50%+ مع عنوان سابق)؟"""
+    new_words = normalize_title(new_title)
+    if len(new_words) < 2:
+        return False
+    for existing in existing_titles:
+        ex_words = normalize_title(existing)
+        if not ex_words:
+            continue
+        common = new_words & ex_words
+        similarity = len(common) / min(len(new_words), len(ex_words))
+        if similarity >= 0.5:
+            return True
+    return False
 
 def extract_media(entry):
     """استخراج صورة أو فيديو من الـ RSS entry"""
@@ -186,21 +208,11 @@ def extract_media(entry):
 
 
 def rewrite_news(title, description, source):
-    """إعادة صياغة الخبر بأسلوب وكالات الأنباء العالمية"""
-    prompt = f"""أنت محرر في وكالة أنباء عالمية مثل رويترز أو فرانس برس. أعد صياغة الخبر بالعربية الفصحى بأسلوب احترافي ومحايد.
+    """إعادة صياغة الخبر بأسلوب وكالات الأنباء"""
+    prompt = f"""صِغ هذا الخبر بفقرة واحدة (3-4 جمل) بالعربية الفصحى بأسلوب رويترز. محايد وجاد بدون إيموجي أو نقاط. ابدأ بأهم معلومة. لا تكرر العنوان. اكتب مباشرة.
 
-العنوان الأصلي: {title}
-النص الأصلي: {description}
-المصدر: {source}
-
-التعليمات:
-- اكتب فقرة واحدة متماسكة من 3-5 جمل (ليست قصيرة جداً ولا طويلة).
-- ابدأ بأهم معلومة (المكان، الفاعل، الحدث).
-- استخدم لغة الصحافة الجادة: محايدة، دقيقة، بدون مبالغة.
-- لا تستخدم نقاط أو رموز إيموجي داخل النص.
-- لا تضف معلومات غير موجودة في الخبر الأصلي.
-- لا تكرر العنوان حرفياً.
-- اكتب الخبر مباشرة بدون مقدمات."""
+{title}
+{description}"""
 
     for attempt in range(3):
         try:
@@ -311,12 +323,8 @@ def process_and_send(item, is_urgent):
     if body:
         caption_lines.append("")
         caption_lines.append(body)
-    caption_lines.extend([
-        "",
-        "━━━━━━━━━━━━━━",
-        f"<i>{source_name}</i> • {datetime.now().strftime('%H:%M')}",
-        f"<a href=\"{link}\">التفاصيل الكاملة ↗</a>",
-    ])
+    caption_lines.append("")
+    caption_lines.append(f"<i>{source_name}</i>")
     caption = "\n".join(caption_lines)
 
     sent = send_news(
@@ -354,6 +362,7 @@ def main():
     # ===== جمع كل الأخبار الجديدة =====
     breaking_items = []   # أخبار عاجلة → فورية
     regular_items = []    # أخبار يومية → كل ساعتين
+    sent_titles = []      # عناوين مُرسلة لكشف التكرار
 
     for source_name, url in FEEDS:
         try:
@@ -376,6 +385,12 @@ def main():
             kw = matches_keywords(f"{title} {desc}")
             if not kw:
                 continue
+
+            # كشف التكرار: نفس الخبر من مصادر مختلفة
+            if is_duplicate_title(title, sent_titles):
+                print(f"  ⊘ مكرر: {title[:50]}")
+                continue
+            sent_titles.append(title)
 
             image, video = extract_media(entry)
             item = (source_name, title, desc, link, image, video)

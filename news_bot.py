@@ -16,25 +16,25 @@ STATE_FILE     = "news_seen.json"
 gemini = genai.Client(api_key=GEMINI_KEY)
 
 # ===== المصادر الإخبارية =====
+# المصادر الأسرع أولاً (عاجلة)
 FEEDS = [
-    # --- مصادر عربية أساسية ---
-    ("BBC عربي",        "https://feeds.bbci.co.uk/arabic/rss.xml"),
-    ("الجزيرة",          "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"),
-    ("RT عربي",         "https://arabic.rt.com/rss/"),
-    ("العربية - إيران",   "https://www.alarabiya.net/feed/rss2/ar/iran.xml"),
-    ("CNN عربي",        "https://arabic.cnn.com/api/v1/rss/rss.xml"),
-    ("AP",              "https://feedx.net/rss/ap.xml"),
-    # --- وكالات أنباء عالمية (أخبار عاجلة) ---
+    # --- الجزيرة عاجل (أسرع مصدر عربي) ---
+    ("الجزيرة عاجل",    "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"),
+    # --- وكالات عالمية (سريعة جداً) ---
     ("Reuters",         "https://feedx.net/rss/reuters.xml"),
     ("AFP",             "https://feedx.net/rss/afp.xml"),
-    # --- Google News عاجل (بحث مخصص) ---
-    ("Google إيران-إسرائيل", "https://news.google.com/rss/search?q=%D8%A5%D9%8A%D8%B1%D8%A7%D9%86+%D8%A5%D8%B3%D8%B1%D8%A7%D8%A6%D9%8A%D9%84&hl=ar&gl=SA&ceid=SA:ar"),
-    ("Google غزة",          "https://news.google.com/rss/search?q=%D8%BA%D8%B2%D8%A9+%D8%AD%D8%B1%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
-    ("Google روسيا-أوكرانيا", "https://news.google.com/rss/search?q=%D8%B1%D9%88%D8%B3%D9%8A%D8%A7+%D8%A3%D9%88%D9%83%D8%B1%D8%A7%D9%86%D9%8A%D8%A7&hl=ar&gl=SA&ceid=SA:ar"),
-    ("Google ترامب",        "https://news.google.com/rss/search?q=%D8%AA%D8%B1%D8%A7%D9%85%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
-    # --- العربية أقسام إضافية ---
-    ("العربية - عاجل",   "https://www.alarabiya.net/feed/rss2/ar.xml"),
-    ("سكاي نيوز عربية", "https://www.skynewsarabia.com/web/rss"),
+    ("AP",              "https://feedx.net/rss/ap.xml"),
+    # --- عربية سريعة ---
+    ("العربية",          "https://www.alarabiya.net/feed/rss2/ar.xml"),
+    ("سكاي نيوز",       "https://www.skynewsarabia.com/web/rss"),
+    ("RT عربي",         "https://arabic.rt.com/rss/"),
+    ("BBC عربي",        "https://feeds.bbci.co.uk/arabic/rss.xml"),
+    ("CNN عربي",        "https://arabic.cnn.com/api/v1/rss/rss.xml"),
+    # --- Google News عاجل (أوسع تغطية) ---
+    ("Google عاجل",     "https://news.google.com/rss/search?q=%D8%B9%D8%A7%D8%AC%D9%84+%D8%A5%D9%8A%D8%B1%D8%A7%D9%86+OR+%D8%A5%D8%B3%D8%B1%D8%A7%D8%A6%D9%8A%D9%84+OR+%D8%BA%D8%B2%D8%A9+OR+%D8%AA%D8%B1%D8%A7%D9%85%D8%A8+OR+%D8%A8%D9%88%D8%AA%D9%8A%D9%86&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google غزة",      "https://news.google.com/rss/search?q=%D8%BA%D8%B2%D8%A9&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google إيران",    "https://news.google.com/rss/search?q=%D8%A5%D9%8A%D8%B1%D8%A7%D9%86&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google ترامب",    "https://news.google.com/rss/search?q=%D8%AA%D8%B1%D8%A7%D9%85%D8%A8&hl=ar&gl=SA&ceid=SA:ar"),
 ]
 
 # ===== كلمات الأخبار العاجلة (أولوية عالية) =====

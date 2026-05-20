@@ -375,9 +375,10 @@ def main():
     MAX_BREAKING = 10
     if breaking_items:
         print(f"\n🔴 أخبار عاجلة: {len(breaking_items)}")
-        for item in breaking_items[:MAX_BREAKING]:
+        for i, item in enumerate(breaking_items[:MAX_BREAKING]):
             if process_and_send(item, is_urgent=True):
                 sent_breaking += 1
+            if i < len(breaking_items[:MAX_BREAKING]) - 1:
                 time.sleep(5)
 
     # ===== 2) إرسال الأخبار اليومية كل ساعتين (10 ثوانٍ بين كل خبر) =====

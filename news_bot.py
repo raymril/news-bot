@@ -268,7 +268,7 @@ def main():
                 total_sent += 1
                 media_tag = "🎥" if video else ("🖼" if image else "📝")
                 print(f"  ✓ {media_tag} [{source_name}] {title[:60]}")
-                time.sleep(2)
+                time.sleep(20)
 
     save_seen(seen)
     print(f"\n✅ المرسلة: {total_sent} | المتابعة: {len(seen)}")

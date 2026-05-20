@@ -76,18 +76,30 @@ CONFLICT_KEYWORDS = [
     "بوتين", "ترامب", "نتنياهو", "خامنئي", "حزب الله", "حماس",
 ]
 
+# فاصل زمني بين دفعات الأخبار اليومية (ساعتين = 7200 ثانية)
+REGULAR_INTERVAL = 7200
+
 # ===== Helpers =====
-def load_seen():
+def load_state():
+    """تحميل الحالة: الأخبار المرئية + وقت آخر إرسال يومي"""
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             try:
-                return set(json.load(f))
-            except: return set()
-    return set()
+                data = json.load(f)
+                # دعم الصيغة القديمة (قائمة فقط) والجديدة (dict)
+                if isinstance(data, list):
+                    return set(data), 0
+                return set(data.get("seen", [])), data.get("last_regular", 0)
+            except:
+                return set(), 0
+    return set(), 0
 
-def save_seen(seen):
+def save_state(seen, last_regular):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(seen)[-3000:], f, ensure_ascii=False)
+        json.dump({
+            "seen": list(seen)[-3000:],
+            "last_regular": last_regular,
+        }, f, ensure_ascii=False)
 
 def is_breaking(text):
     """هل الخبر عاجل؟"""
@@ -416,22 +428,85 @@ def send_telegram(text):
     })
     return ok
 
+# ===== بناء وإرسال خبر =====
+def process_and_send(item, is_urgent):
+    """معالجة خبر واحد وإرساله"""
+    source_name, title, desc, link, image, video = item
+
+    body = rewrite_news(title, desc, source_name)
+
+    # محاولة ترجمة الفيديو وحرق الترجمة داخله
+    video_local = None
+    leader = has_leader(f"{title} {desc}")
+    if video and leader:
+        print(f"  🎙 محاولة ترجمة فيديو ({leader})...")
+        src_video = download_video(video)
+        if src_video:
+            srt_text = gen_srt(src_video)
+            if srt_text:
+                print(f"  📝 SRT ({len(srt_text)} حرف)")
+                video_local = burn_subtitles(src_video, srt_text)
+            try: os.unlink(src_video)
+            except: pass
+
+    caption_lines = []
+    if is_urgent:
+        caption_lines.append("🔴 <b>عاجل</b>")
+        caption_lines.append("")
+    caption_lines.extend([
+        f"<b>{title}</b>",
+        "",
+        body,
+    ])
+    if video_local:
+        caption_lines.append("")
+        caption_lines.append("🎙 <i>ترجمة عربية مدمجة</i>")
+    caption_lines.extend([
+        "",
+        "━━━━━━━━━━━━━━",
+        f"<i>{source_name}</i> • {datetime.now().strftime('%H:%M')}",
+        f"<a href=\"{link}\">التفاصيل الكاملة ↗</a>",
+    ])
+    caption = "\n".join(caption_lines)
+
+    sent = send_news(
+        caption,
+        image=image,
+        video=video if not video_local else None,
+        video_local_path=video_local,
+    )
+
+    if sent:
+        tag = "🔴" if is_urgent else "📰"
+        if video_local:
+            tag = "🎙"
+        elif video:
+            tag = "🎥"
+        elif image:
+            tag = "🖼"
+        print(f"  ✓ {tag} [{source_name}] {title[:60]}")
+
+    return sent
+
 # ===== المعالج الرئيسي =====
 def main():
+    now = time.time()
     print(f"📡 بدء فحص الأخبار - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    seen = load_seen()
+    seen, last_regular = load_state()
     is_first_run = len(seen) == 0
-    total_sent = 0
-    MAX_PER_RUN = 12  # سقف الأخبار لكل تشغيل لتجنب الإغراق
 
     if is_first_run:
         send_telegram(
             "📡 <b>بوت الأخبار جاهز</b>\n\n"
-            "تغطية: الصراع الأمريكي-الإسرائيلي-الإيراني-الروسي، غزة وفلسطين، وأخبار الوطن العربي المرتبطة بهذه الملفات.\n\n"
-            "المصادر: BBC • الجزيرة • RT • العربية • CNN • AP\n"
-            "التحديث: كل 10 دقائق."
+            "🔴 الأخبار العاجلة: فورية (كل 10 دقائق)\n"
+            "📰 الأخبار اليومية: كل ساعتين\n\n"
+            "المصادر: BBC • الجزيرة • RT • العربية • CNN • AP • Reuters • AFP • سكاي نيوز • Google News"
         )
+
+    # ===== جمع كل الأخبار الجديدة =====
+    breaking_items = []   # أخبار عاجلة → فورية
+    regular_items = []    # أخبار يومية → كل ساعتين
 
     for source_name, url in FEEDS:
         try:
@@ -451,74 +526,48 @@ def main():
 
             seen.add(entry_id)
 
-            if total_sent >= MAX_PER_RUN:
-                continue
-
             kw = matches_keywords(f"{title} {desc}")
             if not kw:
                 continue
 
             image, video = extract_media(entry)
-            body = rewrite_news(title, desc, source_name)
+            item = (source_name, title, desc, link, image, video)
 
-            # محاولة ترجمة الفيديو وحرق الترجمة داخله
-            video_local = None
-            leader = has_leader(f"{title} {desc}")
-            if video and leader:
-                print(f"  🎙 محاولة ترجمة فيديو ({leader})...")
-                src_video = download_video(video)
-                if src_video:
-                    srt_text = gen_srt(src_video)
-                    if srt_text:
-                        print(f"  📝 SRT ({len(srt_text)} حرف)")
-                        video_local = burn_subtitles(src_video, srt_text)
-                    # حذف الفيديو المصدر
-                    try: os.unlink(src_video)
-                    except: pass
+            # تصنيف: عاجل أم يومي
+            if is_breaking(f"{title} {desc}"):
+                breaking_items.append(item)
+            else:
+                regular_items.append(item)
 
-            breaking = is_breaking(f"{title} {desc}")
-            caption_lines = []
-            if breaking:
-                caption_lines.append("🔴 <b>عاجل</b>")
-                caption_lines.append("")
-            caption_lines.extend([
-                f"<b>{title}</b>",
-                "",
-                body,
-            ])
-            if video_local:
-                caption_lines.append("")
-                caption_lines.append("🎙 <i>ترجمة عربية مدمجة</i>")
-            caption_lines.extend([
-                "",
-                "━━━━━━━━━━━━━━",
-                f"<i>{source_name}</i> • {datetime.now().strftime('%H:%M')}",
-                f"<a href=\"{link}\">التفاصيل الكاملة ↗</a>",
-            ])
-            caption = "\n".join(caption_lines)
+    # ===== 1) إرسال الأخبار العاجلة فوراً (5 ثوانٍ بين كل خبر) =====
+    sent_breaking = 0
+    MAX_BREAKING = 10
+    if breaking_items:
+        print(f"\n🔴 أخبار عاجلة: {len(breaking_items)}")
+        for item in breaking_items[:MAX_BREAKING]:
+            if process_and_send(item, is_urgent=True):
+                sent_breaking += 1
+                time.sleep(5)
 
-            sent = send_news(
-                caption,
-                image=image,
-                video=video if not video_local else None,
-                video_local_path=video_local,
-            )
+    # ===== 2) إرسال الأخبار اليومية كل ساعتين (10 ثوانٍ بين كل خبر) =====
+    sent_regular = 0
+    MAX_REGULAR = 8
+    time_since_last = now - last_regular
+    regular_due = time_since_last >= REGULAR_INTERVAL or is_first_run
 
-            if sent:
-                total_sent += 1
-                if video_local:
-                    media_tag = "🎙"
-                elif video:
-                    media_tag = "🎥"
-                elif image:
-                    media_tag = "🖼"
-                else:
-                    media_tag = "📝"
-                print(f"  ✓ {media_tag} [{source_name}] {title[:60]}")
-                time.sleep(20)
+    if regular_items and regular_due:
+        print(f"\n📰 أخبار يومية: {len(regular_items)} (آخر دفعة قبل {time_since_last/60:.0f} دقيقة)")
+        for item in regular_items[:MAX_REGULAR]:
+            if process_and_send(item, is_urgent=False):
+                sent_regular += 1
+                time.sleep(10)
+        last_regular = now  # تحديث وقت آخر دفعة
+    elif regular_items:
+        remaining = REGULAR_INTERVAL - time_since_last
+        print(f"\n📰 {len(regular_items)} خبر يومي محفوظ (الدفعة القادمة بعد {remaining/60:.0f} دقيقة)")
 
-    save_seen(seen)
-    print(f"\n✅ المرسلة: {total_sent} | المتابعة: {len(seen)}")
+    save_state(seen, last_regular)
+    print(f"\n✅ عاجل: {sent_breaking} | يومي: {sent_regular} | المتابعة: {len(seen)}")
 
 if __name__ == "__main__":
     main()

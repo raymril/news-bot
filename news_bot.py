@@ -209,40 +209,35 @@ def extract_media(entry):
     return image, video
 
 
-def rewrite_news(title, description, source):
-    """إعادة صياغة الخبر بأسلوب وكالات الأنباء"""
-    prompt = f"""أعد كتابة هذا الخبر كفقرة إخبارية واحدة (3-4 جمل فقط) بالعربية الفصحى.
+def shorten_headline(title, description):
+    """اختصار العنوان الطويل لسطر واحد بأسلوب الجزيرة"""
+    # إذا العنوان قصير كفاية (أقل من 120 حرف) نرجعه كما هو
+    if len(title) <= 120:
+        return title
 
-القواعد الصارمة:
-- فقرة واحدة فقط، لا تكرر أي معلومة مرتين. كل جملة تضيف شيئاً جديداً.
-- أسلوب رويترز: محايد، جاد، مختصر. بدون إيموجي أو نقاط أو عناوين.
-- الجملة الأولى: الحدث الرئيسي مباشرة (من فعل ماذا).
-- الجملة الثانية: السياق أو السبب.
-- الجملة الثالثة: التبعات أو ردود الفعل إن وُجدت.
-- اذكر المصدر الرسمي (البيت الأبيض، الكرملين...) وليس القناة الإعلامية.
-- لا تنسخ من النص الأصلي. أعد الصياغة بكلماتك.
-- اكتب الفقرة مباشرة بدون أي مقدمة.
+    # العنوان طويل → نستخدم Gemini لاختصاره
+    prompt = f"""اختصر هذا الخبر بجملة واحدة فقط (سطر واحد، أقل من 100 حرف) بأسلوب قناة الجزيرة العاجل.
+
+القواعد:
+- جملة واحدة مختصرة وقوية
+- ابدأ بالفاعل الرسمي إن وُجد (البيت الأبيض، الكرملين، حزب الله...)
+- بدون إيموجي، بدون نقاط، بدون علامات تعجب
+- اكتب الجملة مباشرة بدون أي مقدمة
 
 الخبر:
 {title}
-{description}"""
+{description[:200]}"""
 
-    for attempt in range(2):
-        try:
-            r = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-            return r.text.strip()
-        except Exception as e:
-            if "429" in str(e) and attempt < 1:
-                print(f"  ⏳ Gemini rate limit، إعادة بعد 10s...")
-                time.sleep(10)
-            else:
-                print(f"  ⚠ Gemini: {str(e)[:80]}")
-                # fallback: العنوان + جزء من الوصف
-                fallback = title
-                if description and description != title:
-                    fallback += f". {description[:300]}"
-                return fallback
-    return title
+    try:
+        r = gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        result = r.text.strip().strip('"').strip("'")
+        # تأكد إنه سطر واحد
+        result = result.split('\n')[0]
+        return result if result else title
+    except Exception as e:
+        print(f"  ⚠ Gemini: {str(e)[:80]}")
+        # fallback: قص العنوان
+        return title[:120]
 
 def tg_api(method, payload=None, files=None):
     try:
@@ -296,17 +291,18 @@ def send_telegram(text):
 
 # ===== بناء وإرسال خبر =====
 def process_and_send(item, is_urgent):
-    """معالجة خبر واحد وإرساله"""
+    """معالجة خبر واحد وإرساله - بأسلوب قناة الجزيرة"""
     source_name, title, desc, link, image, video = item
 
     clean_title = clean_breaking_title(title)
+    headline = shorten_headline(clean_title, desc)
 
     if is_urgent:
-        # عاجل | نص الخبر
-        caption = f"عاجل | {clean_title}"
+        # عاجل | الخبر
+        caption = f"عاجل | {headline}"
     else:
-        # المصدر | نص الخبر
-        caption = f"{source_name} | {clean_title}"
+        # المصدر | الخبر
+        caption = f"{source_name} | {headline}"
 
     sent = send_news(
         caption,

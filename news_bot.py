@@ -158,7 +158,7 @@ def rewrite_news(title, description, source):
 - اكتب الخبر مباشرة بدون مقدمات."""
 
     try:
-        r = gemini.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        r = gemini.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
         return r.text.strip()
     except Exception as e:
         print(f"خطأ Gemini: {e}")

@@ -1,9 +1,9 @@
 name: News Bot
 
 on:
+  workflow_dispatch: {}
   schedule:
-    - cron: '*/10 * * * *'   # كل 10 دقائق
-  workflow_dispatch:           # تشغيل يدوي من زر
+    - cron: '*/10 * * * *'
 
 permissions:
   contents: write

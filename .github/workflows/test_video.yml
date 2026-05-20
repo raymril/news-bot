@@ -25,6 +25,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Install ffmpeg and Arabic font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-ui-core
+          fc-cache -fv
+          ffmpeg -version | head -1
+
       - run: pip install -r requirements.txt
 
       - name: Run test

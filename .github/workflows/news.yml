@@ -1,0 +1,47 @@
+name: News Bot
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # كل 10 دقائق
+  workflow_dispatch:           # تشغيل يدوي من زر
+
+permissions:
+  contents: write
+
+concurrency:
+  group: news-bot
+  cancel-in-progress: false
+
+jobs:
+  fetch-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run news bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID:        ${{ secrets.CHAT_ID }}
+          GEMINI_KEY:     ${{ secrets.GEMINI_KEY }}
+        run: python news_bot.py
+
+      - name: Commit seen state
+        run: |
+          git config user.name "news-bot"
+          git config user.email "bot@noreply.local"
+          if [ -n "$(git status --porcelain news_seen.json)" ]; then
+            git add news_seen.json
+            git commit -m "update seen state"
+            git push
+          fi

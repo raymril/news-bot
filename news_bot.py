@@ -296,6 +296,10 @@ def process_and_send(item, is_urgent):
 
     clean_title = clean_breaking_title(title)
     headline = shorten_headline(clean_title, desc)
+    # إزالة أي روابط
+    headline = re.sub(r'https?://\S+', '', headline).strip()
+    headline = re.sub(r'www\.\S+', '', headline).strip()
+    headline = re.sub(r'\s+', ' ', headline)
 
     if is_urgent:
         # عاجل | الخبر

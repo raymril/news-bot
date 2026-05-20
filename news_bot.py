@@ -475,7 +475,7 @@ def main():
 
             if sent:
                 total_sent += 1
-                if video_translation:
+                if video_local:
                     media_tag = "🎙"
                 elif video:
                     media_tag = "🎥"

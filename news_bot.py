@@ -101,38 +101,115 @@ def clean_html(text):
     text = re.sub(r'<[^>]+>', '', text or "")
     return re.sub(r'\s+', ' ', text).strip()
 
-def summarize_news(title, description, source):
-    prompt = f"""أنت محرر أخبار محترف. لخّص الخبر التالي بالعربية في 3 نقاط قصيرة:
+def extract_media(entry):
+    """استخراج صورة أو فيديو من الـ RSS entry"""
+    image = None
+    video = None
 
-العنوان: {title}
-التفاصيل: {description}
+    # 1. media_content (أكثر المصادر تستخدمه)
+    for m in entry.get("media_content", []) or []:
+        url_m = m.get("url", "")
+        mtype = (m.get("type") or "").lower()
+        if "video" in mtype or url_m.endswith((".mp4", ".mov")):
+            video = video or url_m
+        elif "image" in mtype or url_m.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            image = image or url_m
+
+    # 2. media_thumbnail
+    if not image:
+        for t in entry.get("media_thumbnail", []) or []:
+            if t.get("url"):
+                image = t["url"]
+                break
+
+    # 3. enclosures
+    for e in entry.get("enclosures", []) or []:
+        url_e = e.get("href") or e.get("url", "")
+        etype = (e.get("type") or "").lower()
+        if "video" in etype and not video:
+            video = url_e
+        elif "image" in etype and not image:
+            image = url_e
+
+    # 4. استخراج من HTML داخل summary/content
+    if not image:
+        html = entry.get("summary", "") or entry.get("description", "")
+        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html)
+        if m:
+            image = m.group(1)
+
+    return image, video
+
+def rewrite_news(title, description, source):
+    """إعادة صياغة الخبر بأسلوب وكالات الأنباء العالمية"""
+    prompt = f"""أنت محرر في وكالة أنباء عالمية مثل رويترز أو فرانس برس. أعد صياغة الخبر بالعربية الفصحى بأسلوب احترافي ومحايد.
+
+العنوان الأصلي: {title}
+النص الأصلي: {description}
 المصدر: {source}
 
-اكتب بهذا التنسيق:
-📌 [النقطة الأساسية في جملة واحدة]
-🔍 [السياق والتفاصيل]
-💡 [الأهمية أو التأثير]
-
-كن موجزاً ومحايداً ولا تضف معلومات من خارج الخبر."""
+التعليمات:
+- اكتب فقرة واحدة متماسكة من 3-5 جمل (ليست قصيرة جداً ولا طويلة).
+- ابدأ بأهم معلومة (المكان، الفاعل، الحدث).
+- استخدم لغة الصحافة الجادة: محايدة، دقيقة، بدون مبالغة.
+- لا تستخدم نقاط أو رموز إيموجي داخل النص.
+- لا تضف معلومات غير موجودة في الخبر الأصلي.
+- لا تكرر العنوان حرفياً.
+- اكتب الخبر مباشرة بدون مقدمات."""
 
     try:
         r = gemini.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         return r.text.strip()
     except Exception as e:
         print(f"خطأ Gemini: {e}")
-        return f"📌 {description[:300]}"
+        return description[:500]
+
+def tg_api(method, payload=None, files=None):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
+        if files:
+            r = requests.post(url, data=payload, files=files, timeout=30)
+        else:
+            r = requests.post(url, json=payload, timeout=15)
+        return r.status_code == 200, r.json() if r.text else {}
+    except Exception as e:
+        print(f"خطأ Telegram ({method}): {e}")
+        return False, {}
+
+def send_news(caption, image=None, video=None):
+    """إرسال الخبر مع الميديا - الفيديو/الصورة فوق والنص تحت"""
+    # Telegram caption limit = 1024 chars
+    if len(caption) > 1020:
+        caption_short = caption[:1015] + "…"
+    else:
+        caption_short = caption
+
+    if video:
+        ok, _ = tg_api("sendVideo", {
+            "chat_id": CHAT_ID, "video": video,
+            "caption": caption_short, "parse_mode": "HTML"
+        })
+        if ok: return True
+
+    if image:
+        ok, _ = tg_api("sendPhoto", {
+            "chat_id": CHAT_ID, "photo": image,
+            "caption": caption_short, "parse_mode": "HTML"
+        })
+        if ok: return True
+
+    # fallback: نص بدون ميديا
+    ok, _ = tg_api("sendMessage", {
+        "chat_id": CHAT_ID, "text": caption,
+        "parse_mode": "HTML", "disable_web_page_preview": False
+    })
+    return ok
 
 def send_telegram(text):
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
-            timeout=15
-        )
-        return r.status_code == 200
-    except Exception as e:
-        print(f"خطأ Telegram: {e}")
-        return False
+    ok, _ = tg_api("sendMessage", {
+        "chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"
+    })
+    return ok
 
 # ===== المعالج الرئيسي =====
 def main():
@@ -144,16 +221,10 @@ def main():
 
     if is_first_run:
         send_telegram(
-            "📡 <b>بوت الأخبار بدأ العمل</b>\n\n"
-            "سأرسل لك الأخبار العاجلة فور نزولها من 6 قنوات إخبارية:\n"
-            "• BBC عربي • الجزيرة • RT عربي\n"
-            "• العربية • CNN عربي • AP\n\n"
-            "🎯 المواضيع:\n"
-            "• الحرب الإيرانية-الإسرائيلية\n"
-            "• فلسطين وغزة\n"
-            "• روسيا وأوكرانيا\n"
-            "• أمريكا والوطن العربي\n\n"
-            "⏱ التحديث: كل 10 دقائق على مدار اليوم"
+            "📡 <b>بوت الأخبار جاهز</b>\n\n"
+            "تغطية: الصراع الأمريكي-الإسرائيلي-الإيراني-الروسي، غزة وفلسطين، وأخبار الوطن العربي المرتبطة بهذه الملفات.\n\n"
+            "المصادر: BBC • الجزيرة • RT • العربية • CNN • AP\n"
+            "التحديث: كل 10 دقائق."
         )
 
     for source_name, url in FEEDS:
@@ -181,20 +252,21 @@ def main():
             if not kw:
                 continue
 
-            summary = summarize_news(title, desc, source_name)
+            image, video = extract_media(entry)
+            body = rewrite_news(title, desc, source_name)
 
-            msg = (
-                f"📰 <b>{source_name}</b> | 🏷 {kw}\n"
-                f"⏰ {datetime.now().strftime('%H:%M %d/%m')}\n"
-                f"{'─' * 25}\n\n"
+            caption = (
                 f"<b>{title}</b>\n\n"
-                f"{summary}\n\n"
-                f"🔗 <a href=\"{link}\">قراءة الخبر كاملاً</a>"
+                f"{body}\n\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"<i>{source_name}</i> • {datetime.now().strftime('%H:%M')}\n"
+                f"<a href=\"{link}\">التفاصيل الكاملة ↗</a>"
             )
 
-            if send_telegram(msg):
+            if send_news(caption, image=image, video=video):
                 total_sent += 1
-                print(f"  ✓ [{source_name}] {title[:60]}")
+                media_tag = "🎥" if video else ("🖼" if image else "📝")
+                print(f"  ✓ {media_tag} [{source_name}] {title[:60]}")
                 time.sleep(2)
 
     save_seen(seen)

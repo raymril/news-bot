@@ -57,17 +57,10 @@ def is_today(entry, tz_offset_hours=3):
         return True
 
 def has_leader_quote(text):
-    """يحتوي على اسم قائد + دلالة تصريح"""
-    found_leader = None
+    """يحتوي على اسم قائد (يكفي ذكر اسمه)"""
     for ldr in LEADERS:
         if ldr in text:
-            found_leader = ldr
-            break
-    if not found_leader:
-        return None
-    for ind in QUOTE_INDICATORS:
-        if ind in text:
-            return found_leader
+            return ldr
     return None
 
 def collect_quotes():
